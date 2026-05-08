@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Search, Plus, Calendar, 
   CheckCircle2, Clock, Trash2,
-  X, Check, Building, Users, GraduationCap, ChevronRight, Share2, Key, Info
+  X, Check, Building, Users, GraduationCap, ChevronRight, Share2, Key, Info, AlertCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/supabase/auth-provider";
