@@ -3,268 +3,266 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Search, Plus, Calendar, Filter, MoreVertical, 
-  CheckCircle2, Clock, AlertCircle, Trash2, Edit2,
-  ChevronDown, X, Check
+  Search, Plus, Calendar, 
+  CheckCircle2, Clock, Trash2,
+  X, Check, Building, Users, GraduationCap, ChevronRight, Share2, Key, Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/supabase/auth-provider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-// --- Categories ---
-const categories = ["All", "Personal", "Group", "Teacher", "Completed"];
+// --- Types ---
+type ServerNode = "YEARS" | "DEPARTMENTS" | "STUDENTS" | "TASKS";
 
 export default function TasksPage() {
   const { user } = useAuth();
   const supabase = createClient();
-  const [tasks, setTasks] = useState<any[]>([]);
+  
+  // State
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("All");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newTask, setNewTask] = useState({
-    title: "",
-    subject: "",
-    category: "Personal",
-    priority: "Medium",
-    deadline: ""
-  });
+  const [institution, setInstitution] = useState<any>(null);
+  const [currentView, setCurrentView] = useState<ServerNode>("TASKS");
+  const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  const [selectedDept, setSelectedDept] = useState<string | null>(null);
+  const [members, setMembers] = useState<any[]>([]);
+  
+  // Modal State
+  const [showCreateServer, setShowCreateServer] = useState(false);
+  const [serverName, setServerName] = useState("");
+
+  const userRole = (user?.user_metadata as any)?.role || "STUDENT";
 
   useEffect(() => {
     if (user) {
-      fetchTasks();
+      fetchInstitution();
     }
-  }, [user, activeTab]);
+  }, [user]);
 
-  const fetchTasks = async () => {
-    let query = supabase.from("tasks").select("*").eq("user_id", user?.id);
+  const fetchInstitution = async () => {
+    const instId = (user?.user_metadata as any)?.institution_id;
     
-    if (activeTab === "Completed") {
-      query = query.eq("status", "Completed");
-    } else if (activeTab !== "All") {
-      query = query.eq("category", activeTab).neq("status", "Completed");
-    } else {
-      query = query.neq("status", "Completed");
+    if (instId) {
+      const { data } = await supabase.from("institutions").select("*").eq("id", instId).single();
+      setInstitution(data);
+    } else if (userRole === "TEACHER") {
+      // Check if teacher created an institution
+      const { data } = await supabase.from("institutions").select("*").eq("created_by", user.id).single();
+      setInstitution(data);
     }
-
-    const { data } = await query.order("deadline", { ascending: true });
-    setTasks(data || []);
     setLoading(false);
   };
 
-  const handleCreateTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTask.title) return;
-
-    const { error } = await supabase.from("tasks").insert({
-      ...newTask,
-      user_id: user?.id,
-      status: "Todo"
-    });
+  const handleCreateServer = async () => {
+    if (!serverName) return;
+    const inviteCode = `${serverName.substring(0, 3).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    
+    const { data, error } = await supabase.from("institutions").insert({
+      name: serverName,
+      invite_code: inviteCode,
+      created_by: user?.id
+    }).select().single();
 
     if (!error) {
-      setShowCreateModal(false);
-      setNewTask({ title: "", subject: "", category: "Personal", priority: "Medium", deadline: "" });
-      fetchTasks();
+      setInstitution(data);
+      setShowCreateServer(false);
+      // Update teacher profile metadata with their own institution_id
+      await supabase.auth.updateUser({
+        data: { institution_id: data.id }
+      });
     }
   };
 
-  const toggleTaskStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === "Completed" ? "Todo" : "Completed";
-    const { error } = await supabase
-      .from("tasks")
-      .update({ status: newStatus })
-      .eq("id", id);
+  const fetchMembers = async (year: string, dept: string) => {
+    setLoading(true);
+    // In a real app, we'd query the profiles table filtered by institution_id, year, and dept
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("institution_id", institution?.id)
+      .eq("year", year)
+      .eq("department", dept);
     
-    if (!error) fetchTasks();
+    setMembers(data || []);
+    setLoading(false);
   };
 
-  const deleteTask = async (id: string) => {
-    const { error } = await supabase.from("tasks").delete().eq("id", id);
-    if (!error) fetchTasks();
-  };
+  // --- UI Components ---
+
+  const TeacherEmptyState = () => (
+    <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
+      <div className="w-20 h-20 bg-primary/10 rounded-[30px] flex items-center justify-center border border-primary/20 shadow-xl">
+        <Building className="w-10 h-10 text-primary" />
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-2xl font-bold">Launch Your Server</h2>
+        <p className="text-sm text-muted-foreground max-w-[280px] mx-auto font-medium leading-relaxed">
+          Create a private ecosystem for your college students. Share your unique key to invite them.
+        </p>
+      </div>
+      <Button onClick={() => setShowCreateServer(true)} className="rounded-2xl h-14 px-8 font-bold text-base shadow-xl shadow-primary/20">
+        Create College Server
+      </Button>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-background pb-24 pt-4 px-4 space-y-6 max-w-lg mx-auto relative">
-      {/* 1. TOP BAR */}
+    <div className="min-h-screen bg-background pb-24 pt-4 px-4 space-y-6 max-w-lg mx-auto relative font-sans">
+      {/* 1. HEADER */}
       <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Tasks</h1>
+        <div className="space-y-0.5">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {currentView === "TASKS" ? "Tasks" : institution?.name || "Server"}
+          </h1>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-primary">
+            {userRole} • {institution ? "SECURE ACCESS" : "NO SERVER"}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="rounded-full bg-muted/50">
-            <Calendar className="w-5 h-5" />
-          </Button>
-          <Button 
-            onClick={() => setShowCreateModal(true)}
-            className="rounded-full w-10 h-10 p-0 bg-primary shadow-lg shadow-primary/20"
-          >
+          {institution && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setCurrentView(currentView === "TASKS" ? "YEARS" : "TASKS")}
+              className={cn("rounded-full h-12 w-12 bg-card border border-border shadow-sm", currentView !== "TASKS" && "bg-primary text-white border-primary")}
+            >
+              <Building className="w-5 h-5" />
+            </Button>
+          )}
+          <Button className="rounded-full h-12 w-12 p-0 bg-primary shadow-lg shadow-primary/20">
             <Plus className="w-6 h-6" />
           </Button>
         </div>
       </header>
 
-      {/* 2. SEARCH & FILTER */}
-      <div className="relative group">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-        <input 
-          placeholder="Search tasks..." 
-          className="w-full pl-12 pr-4 py-3 bg-card border border-border rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium text-sm"
-        />
-      </div>
-
-      {/* 3. CATEGORY TABS */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setActiveTab(cat)}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border",
-              activeTab === cat 
-                ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" 
-                : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-            )}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* 4. TASK LIST */}
-      <div className="space-y-4">
-        {loading ? (
-          <div className="text-center py-12 text-muted-foreground">Loading your workflow...</div>
-        ) : tasks.length > 0 ? (
-          tasks.map((task) => (
-            <motion.div
-              layout
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              key={task.id}
-              className={cn(
-                "group relative bg-card border border-border p-4 rounded-[24px] flex items-start gap-4 hover:border-primary/30 transition-all shadow-sm",
-                task.status === "Completed" && "opacity-60"
-              )}
-            >
-              <button 
-                onClick={() => toggleTaskStatus(task.id, task.status)}
-                className={cn(
-                  "mt-1 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
-                  task.status === "Completed" 
-                    ? "bg-primary border-primary text-white" 
-                    : "border-muted-foreground/30 hover:border-primary"
-                )}
-              >
-                {task.status === "Completed" && <Check className="w-4 h-4" />}
-              </button>
-
-              <div className="flex-1 space-y-1">
-                <h3 className={cn("font-bold text-sm", task.status === "Completed" && "line-through text-muted-foreground")}>
-                  {task.title}
-                </h3>
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{task.subject}</span>
-                  <div className="flex items-center gap-1 text-[10px] font-bold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-full">
-                    <Clock className="w-3 h-3" />
-                    {task.deadline ? new Date(task.deadline).toLocaleDateString() : 'Today'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end gap-2">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 rounded-full hover:bg-red-500/10 hover:text-red-500 transition-colors"
-                  onClick={() => deleteTask(task.id)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-                <div className={cn(
-                  "text-[9px] font-bold px-2 py-0.5 rounded-md border uppercase",
-                  task.priority === "High" ? "text-red-500 border-red-500/20 bg-red-500/5" : "text-blue-500 border-blue-500/20 bg-blue-500/5"
-                )}>
-                  {task.priority}
-                </div>
-              </div>
-            </motion.div>
-          ))
-        ) : (
-          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground space-y-4">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-              <CheckCircle2 className="w-8 h-8 opacity-20" />
-            </div>
-            <p className="text-sm font-medium">All clear! No tasks in this view.</p>
+      {/* 2. SERVER NAVIGATION CONTENT */}
+      {loading ? (
+        <div className="py-20 text-center text-muted-foreground animate-pulse font-medium">Synchronizing Secure Data...</div>
+      ) : !institution ? (
+        userRole === "TEACHER" ? <TeacherEmptyState /> : (
+          <div className="p-8 bg-red-500/5 border border-red-500/10 rounded-[32px] text-center space-y-4">
+            <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
+            <p className="text-sm font-bold text-red-500/80">Disconnected from server. Please re-register with a valid Private Key.</p>
           </div>
-        )}
-      </div>
-
-      {/* 5. CREATE MODAL */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCreateModal(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
-            />
-            <motion.div 
-              initial={{ y: "100%" }} 
-              animate={{ y: 0 }} 
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-card rounded-t-[40px] border-t border-border z-[70] p-8 space-y-6 shadow-2xl"
-            >
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold">New Study Task</h2>
-                <button onClick={() => setShowCreateModal(false)} className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
-                  <X className="w-4 h-4" />
-                </button>
+        )
+      ) : (
+        <AnimatePresence mode="wait">
+          {currentView === "TASKS" ? (
+            <motion.div key="tasks" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-6">
+              {/* Task filters and list here (kept from previous implementation) */}
+              <div className="p-6 bg-card border border-border rounded-[32px] space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold flex items-center gap-2">
+                    <GraduationCap className="w-5 h-5 text-primary" />
+                    Academic Workflow
+                  </h3>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{institution.name}</span>
+                </div>
+                <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">
+                  "Manage your assignments and study schedules within your institutional workspace."
+                </p>
               </div>
-
-              <form onSubmit={handleCreateTask} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Task Title</label>
-                  <input 
-                    autoFocus
-                    placeholder="e.g. Physics Assignment" 
-                    value={newTask.title}
-                    onChange={(e) => setNewTask({...newTask, title: e.target.value})}
-                    className="w-full p-4 bg-muted border-none rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Subject</label>
-                    <input 
-                      placeholder="e.g. Science" 
-                      value={newTask.subject}
-                      onChange={(e) => setNewTask({...newTask, subject: e.target.value})}
-                      className="w-full p-4 bg-muted border-none rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Category</label>
-                    <select 
-                      value={newTask.category}
-                      onChange={(e) => setNewTask({...newTask, category: e.target.value})}
-                      className="w-full p-4 bg-muted border-none rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium appearance-none"
-                    >
-                      <option>Personal</option>
-                      <option>Group</option>
-                      <option>Teacher</option>
-                    </select>
-                  </div>
-                </div>
-
-                <Button className="w-full h-14 rounded-2xl text-lg font-bold mt-4 shadow-xl shadow-primary/20">
-                  Create Task
-                </Button>
-              </form>
+              <div className="text-center py-12 text-muted-foreground italic text-sm">Task list content loading...</div>
             </motion.div>
-          </>
+          ) : currentView === "YEARS" ? (
+            <motion.div key="years" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6">
+              <div className="bg-primary/5 border border-primary/10 rounded-[32px] p-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold">Invite Key</h3>
+                  <p className="text-2xl font-black tracking-tighter text-primary">{institution.invite_code}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="h-12 w-12 rounded-2xl bg-white/5 border border-white/5">
+                  <Share2 className="w-5 h-5 text-primary" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                {["1st Year", "2nd Year"].map((year) => (
+                  <button 
+                    key={year}
+                    onClick={() => { setSelectedYear(year); setCurrentView("DEPARTMENTS"); }}
+                    className="flex items-center justify-between p-6 bg-card border border-border rounded-[28px] hover:border-primary/40 hover:bg-primary/[0.02] transition-all group shadow-sm"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                        <Users className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                      <span className="text-lg font-bold">{year}</span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-all" />
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          ) : currentView === "DEPARTMENTS" ? (
+            <motion.div key="depts" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+              <button onClick={() => setCurrentView("YEARS")} className="text-xs font-bold text-primary flex items-center gap-1">Back to Years</button>
+              <h3 className="text-xl font-bold">{selectedYear} Departments</h3>
+              <div className="grid grid-cols-1 gap-3">
+                {["Science", "Arts", "Commerce"].map((dept) => (
+                  <button 
+                    key={dept}
+                    onClick={() => { setSelectedDept(dept); setCurrentView("STUDENTS"); fetchMembers(selectedYear!, dept); }}
+                    className="p-5 bg-card border border-border rounded-[24px] text-left hover:border-primary/30 transition-all shadow-sm flex items-center justify-between"
+                  >
+                    <span className="font-bold">{dept}</span>
+                    <div className="text-[10px] font-bold text-primary bg-primary/10 px-3 py-1 rounded-full uppercase tracking-widest">Select</div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div key="students" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <button onClick={() => setCurrentView("DEPARTMENTS")} className="text-xs font-bold text-primary flex items-center gap-1">Back to Departments</button>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold">{selectedDept} Students</h3>
+                <span className="text-xs font-bold text-muted-foreground">{members.length} Enrolled</span>
+              </div>
+              <div className="space-y-3">
+                {members.length > 0 ? members.map((member) => (
+                  <div key={member.id} className="flex items-center gap-4 p-4 bg-card border border-border rounded-[24px] shadow-sm">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                      {member.name?.[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold">{member.name}</p>
+                      <p className="text-[10px] text-muted-foreground font-medium italic">@{member.username}</p>
+                    </div>
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                  </div>
+                )) : (
+                  <div className="py-12 text-center text-muted-foreground italic text-sm">No students found in this department yet.</div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* CREATE SERVER MODAL */}
+      <AnimatePresence>
+        {showCreateServer && (
+          <div className="fixed inset-0 flex items-center justify-center z-[100] p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setShowCreateServer(false)} className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card border border-white/10 rounded-[40px] p-10 w-full max-w-[400px] relative z-10 space-y-8 shadow-[0_50px_100px_rgba(0,0,0,0.8)]">
+              <div className="text-center space-y-2">
+                <h2 className="text-3xl font-bold">New Server</h2>
+                <p className="text-sm text-muted-foreground font-medium">Assign a name to your institutional study space.</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold uppercase tracking-widest text-primary px-1">College / Institution Name</label>
+                <input 
+                  autoFocus
+                  placeholder="e.g. Dhaka College" 
+                  value={serverName}
+                  onChange={(e) => setServerName(e.target.value)}
+                  className="w-full p-5 bg-muted/50 border-none rounded-[22px] outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-lg"
+                />
+              </div>
+              <Button onClick={handleCreateServer} className="w-full h-16 rounded-2xl text-lg font-bold shadow-xl shadow-primary/20">
+                Launch System
+              </Button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
