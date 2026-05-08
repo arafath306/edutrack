@@ -45,7 +45,7 @@ export default function TasksPage() {
     if (instId) {
       const { data } = await supabase.from("institutions").select("*").eq("id", instId).single();
       setInstitution(data);
-    } else if (userRole === "TEACHER") {
+    } else if (userRole === "TEACHER" && user) {
       // Check if teacher created an institution
       const { data } = await supabase.from("institutions").select("*").eq("created_by", user.id).single();
       setInstitution(data);
